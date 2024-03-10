@@ -23,8 +23,13 @@ torch.set_default_dtype(torch.float16)
 
 
 class MfiDatasetIterator(DataLoader):
-    def __init__(self, num_features, batch_size, values, device, num_factors):
-        self.values = values
+    """DataLoader function to create all joint probabiliy values for the MFI calculation. Contains the self.dataset as
+    a generator, and creates each batch on the fly in __next__. Num factors is 2 for 2-factor MFI, etc. Value is the
+    current interaction value of interest. Num features is the number of columns in the dataset, in our case 1000.
+    """
+
+    def __init__(self, num_features, batch_size, value, device, num_factors):
+        self.value = value
         self.num_features = num_features
         self.num_factors = num_factors
         self.dataset_length = math.comb(
@@ -63,8 +68,7 @@ class MfiDatasetIterator(DataLoader):
             )
 
     def __next__(self):
-        # @Todo: need to have called get_curr_batch_size!
-
+        """Generates the next batch using the itertools combination generator."""
         combs = torch.IntTensor(
             list(itertools.islice(self.dataset, self.len_curr_batch))
         ).to(self.device)
@@ -77,7 +81,7 @@ class MfiDatasetIterator(DataLoader):
         )
         self.batch[
             torch.arange(self.len_curr_batch, device=self.device).unsqueeze(1), combs
-        ] = self.values
+        ] = self.value
 
         self.current_batch += 1
 
@@ -107,6 +111,7 @@ def pred(
     num_factors,
     save_every,
 ):
+    """Generates the joint probability over the dataset, allowing for intermediate saves."""
     zero_input = torch.zeros(
         (1, 1, 1, sequence_length),
         device=device,
@@ -459,7 +464,7 @@ if __name__ == "__main__":
     # assert len(values_list) == (3 if args.num_factors == 2 else 7)
     print("Creating dataloaders..")
     loader = MfiDatasetIterator(
-        values=value,
+        value=value,
         num_features=args.sequence_length,
         batch_size=args.batch_size,
         device=args.device,
