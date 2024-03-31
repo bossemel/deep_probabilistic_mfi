@@ -9,14 +9,12 @@ module_path = os.path.abspath(os.path.join("../.."))
 if module_path not in sys.path:
     sys.path.append(module_path)
 
-import seaborn as sns
-import matplotlib.pyplot as plt
 from tqdm import tqdm
 import math
 import time
 import torch
 import time
-import numpy as np
+import argparse
 
 from src.mfi import (
     calculate_significance,
@@ -29,16 +27,38 @@ from src.mfi import (
 from src.utils import get_mfi_input_values
 
 
+def parse_arguments():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--num_factors", type=int, default=2, help="Number of factors")
+    parser.add_argument(
+        "--sequence_length", type=int, default=1000, help="Sequence length"
+    )
+    parser.add_argument("--batch_size", type=int, default=1000, help="Batch size")
+    parser.add_argument(
+        "--save_every", type=int, default=10000000000, help="Save every"
+    )
+    parser.add_argument("--device", type=str, default="cpu", help="Device to use")
+    parser.add_argument(
+        "--base_path",
+        type=str,
+        default="../../outputs/mfi/",
+        help="Base path for outputs",
+    )
+    parser.add_argument("--save_counter", type=int, default=0, help="Save counter")
+
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
-    # @Todo: make a config.yaml for these values and reuse between prediction and assembly
-    num_factors = 2
-    sequence_length = 1000
-    batch_size = 100000
-    save_every = 10000000000  # 1000
-    batch_size = 1000
-    device = "cpu"
-    base_path = "../../outputs/mfi/"
-    save_counter = 0
+
+    args = parse_arguments()
+    num_factors = args.num_factors
+    sequence_length = args.sequence_length
+    batch_size = args.batch_size
+    save_every = args.save_every
+    device = args.device
+    base_path = args.base_path
+    save_counter = args.save_counter
 
     start_time = time.time()
     values_list = get_mfi_input_values(num_factors)

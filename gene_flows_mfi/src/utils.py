@@ -1,7 +1,4 @@
 import argparse
-import matplotlib.pyplot as plt
-import seaborn as sns
-import numpy as np
 
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -110,104 +107,6 @@ def single_corr_matrix(samples):
     plt.xlabel("Features")
     plt.ylabel("Features")
     plt.show()
-
-
-def parse_arguments():
-    parser = argparse.ArgumentParser(
-        description="Description of your program",
-    )
-    parser.add_argument(
-        "--seed",
-        type=int,
-        default=4,
-        help="Seed for random number generation",
-    )
-    parser.add_argument(
-        "--batch_size",
-        type=int,
-        default=100,
-        help="Batch size for training",
-    )
-    parser.add_argument(
-        "--n_epochs",
-        type=int,
-        default=1,
-        help="Number of epochs for training",
-    )
-    parser.add_argument(
-        "--hidden_dims",
-        type=int,
-        default=2000,
-        help="Dimension of hidden layers",
-    )
-    parser.add_argument(
-        "--num_layers",
-        type=int,
-        default=2,
-        help="Number of layers in the model",
-    )
-    parser.add_argument(
-        "--n_masks",
-        type=int,
-        default=1,
-        help="Number of masks",
-    )
-    parser.add_argument(
-        "--lr",
-        type=float,
-        default=0.01,
-        help="Learning rate",
-    )
-    parser.add_argument(
-        "--weight_decay",
-        type=float,
-        default=0.001,
-        help="Weight decay",
-    )
-    parser.add_argument(
-        "--step_size",
-        type=int,
-        default=30,
-        help="Step size",
-    )
-    parser.add_argument(
-        "--sequence_length",
-        type=int,
-        default=1000,
-        help="Length of sequence",
-    )
-    parser.add_argument(
-        "--log_dir",
-        type=str,
-        default="../tmp/run/genes_3",
-        help="Directory for logging",
-    )
-    parser.add_argument(
-        "--device",
-        type=str,
-        default=None,
-        help="Device for training",
-    )
-    parser.add_argument(
-        "--n_gpus",
-        type=int,
-        default=0,
-        help="Number of GPUs to use",
-    )
-    parser.add_argument(
-        "--use_wandb",
-        type=bool,
-        default=True,
-        help="Flag to use wandb",
-    )
-    parser.add_argument(
-        "--restore",
-        action="store_true",
-        help="Flag to restore from checkpoint",
-    )
-
-    args = parser.parse_args()
-    return args
 
 
 def get_mfi_input_values(num_factors):
