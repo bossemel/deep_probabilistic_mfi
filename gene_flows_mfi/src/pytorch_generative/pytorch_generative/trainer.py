@@ -204,15 +204,15 @@ class Trainer:
         Subclasses can override this method to define custom training loops.
         """
         # @Todo Leo: figure out where to do this better
-        x = x  # .float()
+        x = x.float()
         preds = self.model(x)
         return self.loss_fn(x, y, preds) / (x.shape[0] * x.shape[3])
 
     def _train_one_batch(self, x, y):
         self.model.train()
-        x = x  # .float().to(self.device)
+        x = x.float().to(self.device)
         if y is not None:
-            y = y  # .float().to(self.device)
+            y = y.float().to(self.device)
         self.optimizer.zero_grad()
         metrics = self._get_metrics_dict(self.train_one_batch(x, y))
         metrics["loss"].backward()
@@ -243,9 +243,9 @@ class Trainer:
     @torch.no_grad()
     def _eval_one_batch(self, x, y):
         self.model.eval()
-        x = x  # .float().to(self.device)
+        x = x.float().to(self.device)
         if y is not None:
-            y = y  # .float().to(self.device)
+            y = y.float().to(self.device)
         metrics = self._get_metrics_dict(self.eval_one_batch(x, y))
         return {k: v.item() for k, v in metrics.items()}
 
