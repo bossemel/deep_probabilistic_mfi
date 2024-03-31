@@ -11,12 +11,12 @@ def loss_fn(x, _, preds):
 
 
 def nll_singles(model, my_input):
-    preds = model.forward(my_input).detach()
+    preds = model.forward(my_input)  # .detach()
     batch_size = my_input.shape[0]
     my_input, preds = my_input.view((batch_size, -1)), preds.view((batch_size, -1))
-    prob = F.binary_cross_entropy_with_logits(preds, my_input, reduction="none").sum(
-        dim=1
-    )
+    prob = F.binary_cross_entropy_with_logits(
+        preds.reshape(-1, 1), my_input, reduction="none"
+    ).sum(dim=1)
     return prob
 
 

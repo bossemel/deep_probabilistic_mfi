@@ -37,7 +37,15 @@ class MaskedLinear(nn.Linear):
 class MADE(base.AutoregressiveModel):
     """The Masked Autoencoder Distribution Estimator (MADE) model."""
 
-    def __init__(self, input_dim, hidden_dims=None, n_masks=1, sample_fn=None):
+    def __init__(
+        self,
+        input_dim,
+        device,
+        hidden_dims=None,
+        n_masks=1,
+        sample_fn=None,
+        resample_masks=True,
+    ):
         """Initializes a new MADE instance.
 
         Args:
@@ -51,6 +59,9 @@ class MADE(base.AutoregressiveModel):
         self._dims = [self._input_dim] + (hidden_dims or []) + [self._input_dim]
         self._n_masks = n_masks
         self._mask_seed = 0
+        self._device = device
+        self._masks = None
+        self._resample_masks = resample_masks
 
         layers = []
         for i in range(len(self._dims) - 1):
@@ -73,26 +84,49 @@ class MADE(base.AutoregressiveModel):
             A tuple of (masks, ordering). Ordering refers to the ordering of the outputs
             since MADE is order agnostic.
         """
+        if self._masks is not None and self._resample_masks == False:
+            return self._masks
         rng = np.random.RandomState(seed=self._mask_seed % self._n_masks)
         self._mask_seed += 1
 
         # Sample connectivity patterns.
-        conn = [rng.permutation(self._input_dim)]
-        for i, dim in enumerate(self._dims[1:-1]):
+        len_dims = len(self._dims)
+        conn = [None] * len_dims
+
+        conn[0] = rng.permutation(self._input_dim)
+        low = 0
+        for idx in range(1, len_dims - 1):
+            # for i, dim in enumerate(self._dims[1:-1]):
             # NOTE(eugenhotaj): The dimensions in the paper are 1-indexed whereas
             # arrays in Python are 0-indexed. Implementation adjusted accordingly.
-            low = 0 if i == 0 else np.min(conn[i - 1])
+            # low = 0 if i == 0 else np.min(conn[i - 1])
             high = self._input_dim - 1
-            conn.append(rng.randint(low, high, size=dim))
-        conn.append(np.copy(conn[0]))
+            conn[idx] = rng.randint(low, high, size=self._dims[idx])
+            low = np.min(conn[idx])
+        conn[-1] = np.copy(conn[0])
+        len_conn = len(conn)
 
         # Create masks.
-        masks = [
-            conn[i - 1][None, :] <= conn[i][:, None] for i in range(1, len(conn) - 1)
-        ]
-        masks.append(conn[-2][None, :] < conn[-1][:, None])
+        masks = [None] * (len_conn - 1)
+        for i in range(1, len_conn - 1):
+            masks[i - 1] = torch.tensor(
+                conn[i - 1][None, :] <= conn[i][:, None],
+                device=self._device,
+                dtype=torch.bool,
+            )
 
-        return [torch.from_numpy(mask.astype(np.uint8)) for mask in masks], conn[-1]
+        masks[-1] = torch.tensor(
+            conn[-2][None, :] < conn[-1][:, None],
+            device=self._device,
+            dtype=torch.bool,
+        )
+
+        self._masks = masks, torch.tensor(
+            conn[-1],
+            device=self._device,
+            dtype=torch.int,
+        )
+        return self._masks
 
     def _forward(self, x, masks):
         layers = [
@@ -125,7 +159,7 @@ class MADE(base.AutoregressiveModel):
     @base.auto_reshape
     def _sample(self, x):
         masks, ordering = self._sample_masks()
-        ordering = np.argsort(ordering)
+        ordering = torch.argsort(ordering)
         for dim in ordering:
             out = self._forward(x, masks)[:, dim]
             out = self._sample_fn(out)

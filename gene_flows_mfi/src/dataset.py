@@ -5,10 +5,12 @@ import torch
 
 
 class gene_dataset(Dataset):
-    def __init__(self, data_path, transform=None):
+    def __init__(self, data_path, transform=None, reorder_columns=None):
         super().__init__()
         pre_data = pd.read_csv(data_path)
-        df = pre_data.drop("Index", axis=1)
+        df = pre_data.drop("Index", axis=1)  # Remove index column from dataframe
+        if reorder_columns != None:
+            df = df[reorder_columns]
         self.data = df.to_numpy()
         self.data = np.where(self.data > 0, 1, 0).astype(float)
 
@@ -27,13 +29,17 @@ class gene_dataset(Dataset):
         return self.data[idx]
 
 
-def load_gene_datasets(train_path, test_path):
-    return gene_dataset(train_path), gene_dataset(test_path)
+def load_gene_datasets(train_path, test_path, reorder_columns=None):
+    return gene_dataset(train_path, reorder_columns=reorder_columns), gene_dataset(
+        test_path, reorder_columns=reorder_columns
+    )
 
 
 # @Todo: double check if we want to fix seed like this
-def load_dataset(train_path, test_path, seed=4):
-    train_data, test_data = load_gene_datasets(train_path, test_path)
+def load_dataset(train_path, test_path, seed=4, reorder_columns=None):
+    train_data, test_data = load_gene_datasets(
+        train_path, test_path, reorder_columns=reorder_columns
+    )
 
     # @Todo: fix seed
     train_size = int(len(train_data) * 0.8)
