@@ -1,8 +1,12 @@
+import itertools
+import math
 import os
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+from tqdm import tqdm
+from torch.utils.data import DataLoader
 
 
 def calc_log_marginal(
@@ -258,3 +262,183 @@ def initialize_tensors(length, num_values, device):
         log_mfi_list,
         log_var_list,
     )
+
+
+# @Todo: implement Dataset and then use build-in dataloader instead
+class MfiDatasetIterator(DataLoader):
+    """DataLoader function to create all joint probabiliy values for the MFI calculation. Contains the self.dataset as
+    a generator, and creates each batch on the fly in __next__. Num factors is 2 for 2-factor MFI, etc. Value is the
+    current interaction value of interest. Num features is the number of columns in the dataset, in our case 1000.
+    """
+
+    def __init__(self, num_features, batch_size, value, device, num_factors, dtype):
+        self.value = value
+        self.num_features = num_features
+        self.num_factors = num_factors
+        self.dataset_length = math.comb(
+            self.num_features,
+            self.num_factors,
+        )
+        self.dataset = itertools.combinations(
+            range(self.num_features),
+            self.num_factors,
+        )
+
+        self.batch_size = batch_size
+        self.device = device
+        self.num_batches = math.ceil(self.dataset_length / batch_size)
+        self.dtype = dtype
+        self.current_batch = 0
+
+        self.get_curr_batch_size()
+
+    def __iter__(self):
+        return self
+
+    def get_curr_batch_size(self):
+        if (self.current_batch + 1) * self.batch_size < self.dataset_length:
+            self.len_curr_batch = self.batch_size
+        else:
+            self.len_curr_batch = (
+                self.dataset_length - self.current_batch * self.batch_size
+            )
+
+    def __next__(self):
+        """Generates the next batch using the itertools combination generator."""
+        if self.current_batch == self.num_batches:
+            raise StopIteration
+        self.get_curr_batch_size()
+        combs = torch.tensor(
+            list(itertools.islice(self.dataset, self.len_curr_batch)),
+            device=self.device,
+            dtype=torch.int,
+        )
+
+        batch = torch.zeros(
+            (self.len_curr_batch, self.num_features),
+            device=self.device,
+            dtype=torch.bool,
+        )
+
+        batch[
+            torch.arange(self.len_curr_batch, device=self.device).unsqueeze(1),
+            combs,
+        ] = self.value
+
+        batch = batch.unsqueeze(1).unsqueeze(1)
+        self.current_batch += 1
+
+        if self.dtype == "float16":
+            batch = batch.half()
+        elif self.dtype == "float64":
+            batch = batch.double()
+        elif self.dtype == "float32":
+            batch = batch.float()
+        else:
+            raise ValueError("Unknown dtype.")
+
+        return batch
+
+    def __len__(self):
+        return self.num_batches
+
+
+def pred_mfi_components(
+    model,
+    sequence_length,
+    loader,
+    value_to_save,
+    device,
+    num_factors,
+    save_every,
+    dtype,
+    autocast,
+    output_dir,
+):
+    """Generates the joint probability over the dataset, allowing for intermediate saves."""
+    criterion = torch.nn.BCEWithLogitsLoss(reduction="none")
+
+    def nll_singles_loop(my_input):
+        fwd = model.forward(my_input)
+        my_input, fwd = my_input.squeeze((1, 2)), fwd.squeeze((1, 2))
+
+        # Create an instance of BCEWithLogitsLoss
+        loss = criterion(fwd, my_input)
+
+        loss = loss.sum(dim=1)
+        return loss
+
+    # zero inputs:
+    batch = torch.zeros(
+        (1, 1, 1, sequence_length),
+        device=device,
+        dtype=dtype,
+    )
+    with torch.cuda.amp.autocast():
+        preds_batch = -nll_singles_loop(
+            my_input=batch,
+        )
+    # save mfi values
+    path = os.path.join(output_dir, f"{num_factors}_factor/{value_to_save}")
+    os.makedirs(path, exist_ok=True)
+
+    torch.save(
+        preds_batch,
+        os.path.join(
+            path,
+            f"preds_batch_{num_factors}_zero.pt",
+        ),
+    )
+
+    preds = torch.empty(
+        min(save_every * loader.batch_size, loader.dataset_length),
+        device=device,
+        dtype=dtype,
+    )
+
+    last_assigned = 0
+    processed = 0
+
+    for idx, batch in enumerate(
+        tqdm(loader, total=loader.num_batches)
+    ):  # @Todo: consider using torch progress bar instead
+        idx_since_save = idx % save_every
+        if autocast:
+            with torch.cuda.amp.autocast():
+                preds_batch = -nll_singles_loop(my_input=batch)
+        else:
+            preds_batch = -nll_singles_loop(my_input=batch)
+
+        processed += preds_batch.shape[0]
+
+        if loader.len_curr_batch == loader.batch_size:
+            preds[
+                idx_since_save
+                * loader.len_curr_batch : (idx_since_save + 1)
+                * loader.len_curr_batch
+            ] = preds_batch
+            last_assigned = (idx_since_save + 1) * loader.len_curr_batch
+        else:
+            preds[last_assigned:] = preds_batch
+
+        if idx % save_every == save_every - 1 or idx == (loader.num_batches) - 1:
+            torch.save(
+                preds,
+                os.path.join(
+                    path,
+                    f"preds_batch_{num_factors}_{idx // save_every}.pt",
+                ),
+            )
+
+            if idx != (loader.num_batches) - 1:
+                preds = torch.empty(
+                    min(
+                        save_every * loader.batch_size,
+                        loader.dataset_length - processed,
+                    ),
+                    device=device,
+                    dtype=dtype,
+                )
+                last_assigned = 0
+
+    return idx // save_every

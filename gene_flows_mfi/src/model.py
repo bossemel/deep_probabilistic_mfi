@@ -1,5 +1,8 @@
+import os
 import torch
 from torch.nn import functional as F
+
+from src.pytorch_generative.pytorch_generative import models
 
 
 def loss_fn(x, _, preds):
@@ -32,3 +35,62 @@ def likelihood(model, my_input):
     loss = nll(model, my_input)
     prob = torch.exp(-loss)
     return prob
+
+
+def load_model_eval(
+    sequence_length,
+    hidden_dims,
+    num_layers,
+    n_masks,
+    log_dir,
+    val_epoch,
+    device,
+    quantize,
+    compile_model,
+    resample_masks,
+):
+    # load the model
+    model = models.MADE(
+        input_dim=sequence_length,
+        hidden_dims=[hidden_dims] * num_layers,
+        n_masks=n_masks,
+        device=device,
+        resample_masks=resample_masks,
+    ).to(device)
+
+    checkpoint = torch.load(
+        os.path.join(log_dir, f"trainer_state_{val_epoch}.ckpt"),
+        map_location=device,
+    )
+
+    model_state_dict = {
+        k: v for k, v in checkpoint["model"].items() if k in model.state_dict()
+    }
+    model.load_state_dict(model_state_dict)
+
+    model_state_dict = {
+        k: v for k, v in checkpoint["model"].items() if k in model.state_dict()
+    }
+    model.load_state_dict(model_state_dict)
+
+    for param in model.parameters():
+        param.grad = None
+    model = model.eval()
+
+    if quantize:
+        # Specify quantization configuration
+        model.qconfig = torch.quantization.get_default_qconfig("x86")
+
+        # Prepare the model for static quantization
+        model = torch.quantization.prepare(model, inplace=False)
+
+        model = torch.ao.quantization.quantize_dynamic(
+            model,  # the original model
+            {torch.nn.Linear},  # a set of layers to dynamically quantize
+            dtype=torch.quint8,
+        )  # the target dtype for quantized weightsx
+
+    if compile_model:
+        model.compile()
+
+    return model
